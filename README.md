@@ -1,1 +1,1 @@
-# compilator | Linux
+# compilator | Unix
