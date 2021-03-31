@@ -1,1 +1,1 @@
-# compilator-c
+# compilator | Unix
