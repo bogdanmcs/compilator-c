@@ -1,15 +1,12 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<stdarg.h>
-#include<string.h>
-#include<unistd.h>
-#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #include <ctype.h>
-#include "alexFuncts.h"
+#include "Token.h"
+#include "ErrChecker.h"
+#include "LexicalAnalyzer.h"
 
-#define SAFEALLOC(var,Type) if((var=(Type*)malloc(sizeof(Type)))==NULL)err("not enough memory");
 enum{ID, BREAK, CHAR, DOUBLE, ELSE, FOR, IF, INT, RETURN, STRUCT, VOID, WHILE, CT_INT, CT_REAL, CT_CHAR, CT_STRING, COMMA, SEMICOLON, LPAR, RPAR, LBRACKET, RBRACKET, LACC, RACC,
     ADD, MUL, SUB, DIV, DOT, AND, OR, NOT, ASSIGN, EQUAL, NOTEQ, LESS, LESSEQ, GREATER, GREATEREQ, END}; // codurile AL
 
@@ -19,40 +16,94 @@ const char* enumNames[] = {"ID", "BREAK", "CHAR", "DOUBLE", "ELSE", "FOR", "IF",
                            "DIV", "DOT", "AND", "OR", "NOT", "ASSIGN", "EQUAL", "NOTEQ", "LESS", "LESSEQ", "GREATER",
                            "GREATEREQ", "END"};
 
-typedef struct Token{
-    int code, line;
-    union{
-        char *text;
-        long int i;
-        double r;
-    };
-    struct Token *next;
-}Token;
-
 Token *tokens, *lastToken;
 char *pCurrent;
 int line = 1;
 
-void err(const char *fmt,...)
+char *createString(const char *strInt, char *strEnd)
 {
-    va_list va;
-    va_start(va,fmt);
-    fprintf(stderr,"error: ");
-    vfprintf(stderr,fmt,va);
-    fputc('\n',stderr);
-    va_end(va);
-    exit(-1);
+    char *newText;
+    int i, n = strEnd - strInt;
+    newText = malloc (sizeof(char) * n);
+    int textIndex = 0;
+    int k = 0;
+    if(strInt[0] == '\"') k = 1;
+    for(i = k; i < n - k; i++) // i=1,i<n-1 => fara " la inceput si final
+    {
+        if(strInt[i] == '\\'){
+            if(strInt[i+1]=='a'){
+                newText[textIndex++] = '\a'; i++;
+            } else if(strInt[i+1]=='b'){
+                newText[textIndex++] = '\b'; i++;
+            } else if(strInt[i+1]=='f'){
+                newText[textIndex++] = '\f'; i++;
+            } else if(strInt[i+1]=='n'){
+                newText[textIndex++] = '\n'; i++;
+            } else if(strInt[i+1]=='r'){
+                newText[textIndex++] = '\r'; i++;
+            } else if(strInt[i+1]=='t'){
+                newText[textIndex++] = '\t'; i++;
+            } else if(strInt[i+1]=='v'){
+                newText[textIndex++] = '\v'; i++;
+            } else if(strInt[i+1]=='\''){
+                newText[textIndex++] = '\''; i++;
+            } else if(strInt[i+1]=='?'){
+                newText[textIndex++] = '\?'; i++;
+            } else if(strInt[i+1]=='\"'){
+                newText[textIndex++] = '\"'; i++;
+            } else if(strInt[i+1]=='\\'){
+                newText[textIndex++] = '\\'; i++;
+            } else if(strInt[i+1]=='0'){
+                newText[textIndex++] = '\0'; i++;
+            } else {
+                printf("Eroare la construire CT_STRING, caracter invalid []\n");
+                exit(7);
+            }
+        } else newText[textIndex++] = strInt[i];
+    }
+    newText[textIndex] = '\0';
+    return newText;
 }
 
-void tkerr(const Token *tk,const char *fmt,...)
+double createDouble(const char *strInt, char *strEnd)
 {
-    va_list va;
-    va_start(va,fmt);
-    fprintf(stderr,"error in line %d: ",tk->line);
-    vfprintf(stderr,fmt,va);
-    fputc('\n',stderr);
-    va_end(va);
-    exit(-1);
+    char *newText;
+    int i, n = strEnd - strInt;
+    newText = malloc (sizeof(char) * n);
+    for(i = 0; i < n; i++)
+        newText[i] = strInt[i];
+    newText[i] = '\0';
+    double textToDouble = atof(newText);
+    return textToDouble;
+}
+
+long int createLongInt(const char *strInt, char *strEnd)
+{
+    char *newText;
+    int i, n = strEnd - strInt;
+    newText = malloc (sizeof(char) * n);
+    for(i = 0; i < n; i++)
+        newText[i] = strInt[i];
+    newText[i] = '\0';
+    long int textToLongInt = strtol(newText, NULL, 0);
+    return textToLongInt;
+}
+
+long int createLongIntChar(const char *strInt, char *strEnd)
+{
+    char newChar;
+    int n = strEnd - strInt;
+    if(n == 3) newChar = strInt[1];
+    else if(n == 4){
+        if(strInt[2] == 'a') newChar = '\a';
+        else if(strInt[2] == 'b') newChar = '\b'; else if(strInt[2] == 'f') newChar = '\f'; else if(strInt[2] == 'n') newChar = '\n';
+        else if(strInt[2] == 'r') newChar = '\r'; else if(strInt[2] == 't') newChar = '\t'; else if(strInt[2] == 'v') newChar = '\v';
+        else if(strInt[2] == '\'') newChar = '\''; else if(strInt[2] == '?') newChar = '\?'; else if(strInt[2] == '\"') newChar = '\"';
+        else if(strInt[2] == '\\') newChar = '\\'; else if(strInt[2] == '0') newChar = '\0';
+    }
+
+    long int textToLongIntChar = newChar;
+    return textToLongIntChar;
 }
 
 void initToken()
@@ -546,8 +597,6 @@ void freeMem()
 {
     pCurrent = malloc(sizeof(char));
     free(pCurrent);
-    free(tokens);
-    free(lastToken);
 }
 
 void showIfAttribute(struct Token *tk)
@@ -575,41 +624,57 @@ void showAtoms()
         printf("\n");
         p = p->next;
     }
+    printf("----------\n");
     free(p);
 }
 
 void openFileAndSetPointer(char *fileName)
 {
-    int fileDescriptor;
-    if((fileDescriptor = open(fileName, O_RDONLY)) < 0)
-    {
-        printf("Erorr: cannot open file %s'\n", fileName);
-        exit(1);
+    FILE *file = fopen(fileName, "rb");
+
+    char fileText[100];
+    size_t bytesRead = 0;
+
+    char *bufferDynamic;
+    bufferDynamic = malloc (sizeof(char) * 0);
+
+    if (file) {
+
+        while ((bytesRead = fread(fileText, sizeof(char), sizeof(fileText), file)) > 0) {
+            fileText[bytesRead] = '\0';
+
+            bufferDynamic = realloc (bufferDynamic,
+                                     sizeof(char) * (strlen(bufferDynamic) + bytesRead));
+            strcat(bufferDynamic, fileText);
+        }
+
+        ///
+        pCurrent = malloc (sizeof(char) * strlen(bufferDynamic));
+        strcpy(pCurrent, bufferDynamic);
+        ///
+
+        printf("----------\n");
+        printf("%s\n", pCurrent);
+        printf("----------\n");
+
+    } else {
+        printf("Error: couldn't open file %s\n", fileName);
+        exit(44);
     }
 
-    char fileText[1025];
-    if(read(fileDescriptor, &fileText, sizeof(fileText)) < 0){
-        printf("Error: cannot read from file %s\n", fileName);
-        exit(2);
-    } fileText[strlen(fileText)] = '\0';
-    close(fileDescriptor);
-    printf("----------\n");
-    printf("%s\n", fileText);
-    printf("----------\n");
-    pCurrent = malloc (sizeof(char) * strlen(fileText));
-    strcpy(pCurrent, fileText);
+    free(bufferDynamic);
+    fclose(file);
 }
 
-int main()
-{
+Token* analyzeLex(char *fileName){
+
     initToken();
-    openFileAndSetPointer("date.txt");
+    openFileAndSetPointer(fileName);
 
     while(getNextToken() != END)
         ;
 
     showAtoms();
-
     freeMem();
-    return 0;
+    return tokens;
 }
