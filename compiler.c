@@ -9,7 +9,7 @@
 int main()
 {
     // lexical analyzer
-    Token *tokens = analyzeLex("9.c");
+    Token *tokens = analyzeLex("9.c");  // ("tests/x.c"), x = 0-9
 
     // syntax analyzer
     analyzeSyntax(tokens);
@@ -17,5 +17,4 @@ int main()
     //
     free(tokens);
     return 0;
-
 }
