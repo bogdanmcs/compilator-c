@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <ctype.h>
 #include "Token.h"
 #include "ErrChecker.h"
 #include "LexicalAnalyzer.h"
-
 
 enum{ID, BREAK, CHAR, DOUBLE, ELSE, FOR, IF, INT, RETURN, STRUCT, VOID, WHILE, CT_INT, CT_REAL, CT_CHAR, CT_STRING, COMMA, SEMICOLON, LPAR, RPAR, LBRACKET, RBRACKET, LACC, RACC,
     ADD, MUL, SUB, DIV, DOT, AND, OR, NOT, ASSIGN, EQUAL, NOTEQ, LESS, LESSEQ, GREATER, GREATEREQ, END}; // codurile AL
@@ -19,7 +20,7 @@ const char* enumNames[] = {"ID", "BREAK", "CHAR", "DOUBLE", "ELSE", "FOR", "IF",
 
 Token *tokens, *lastToken;
 char *pCurrent;
-int line = 1;
+int line;
 
 char *createString(const char *strInt, char *strEnd)
 {
@@ -107,8 +108,9 @@ long int createLongIntChar(const char *strInt, char *strEnd)
     return textToLongIntChar;
 }
 
-void initToken()
+void init()
 {
+    line = 1;
     tokens = malloc(sizeof(struct Token));
     tokens -> next = NULL;
     lastToken = NULL;
@@ -472,7 +474,8 @@ int getNextToken()
                 } else state = 41;
                 break;
             case 39:
-                if(isalnum(ch)){
+                if(isdigit(ch) || (ch >= 'a' && ch <= 'f') ||
+                   (ch >= 'A' && ch <= 'F')){
                     pCurrent++;
                     state = 40;
                 } else tkerr(addTk(END, line),"Error: invalid character");
@@ -633,43 +636,20 @@ void openFileAndSetPointer(char *fileName)
 {
     FILE *file = fopen(fileName, "rb");
 
-    char fileText[100];
-    size_t bytesRead = 0;
-
-    char *bufferDynamic;
-    bufferDynamic = malloc (sizeof(char) * 0);
-
-    if (file) {
-
-        while ((bytesRead = fread(fileText, sizeof(char), sizeof(fileText), file)) > 0) {
-            fileText[bytesRead] = '\0';
-
-            bufferDynamic = realloc (bufferDynamic,
-                                     sizeof(char) * (strlen(bufferDynamic) + bytesRead));
-            strcat(bufferDynamic, fileText);
-        }
-
-        ///
-        pCurrent = malloc (sizeof(char) * strlen(bufferDynamic));
-        strcpy(pCurrent, bufferDynamic);
-        ///
-
-        printf("----------\n");
-        printf("%s\n", pCurrent);
-        printf("----------\n");
-
-    } else {
-        printf("Error: couldn't open file %s\n", fileName);
-        exit(44);
-    }
-
-    free(bufferDynamic);
+    char fileText[30001];
+    int n = fread(fileText, 1, 30000, file);
+    fileText[n] = '\0';
     fclose(file);
+    pCurrent = fileText;
+
+    printf("----------\n");
+    printf("%s\n", pCurrent);
+    printf("----------\n");
 }
 
 Token* analyzeLex(char *fileName){
 
-    initToken();
+    init();
     openFileAndSetPointer(fileName);
 
     while(getNextToken() != END)
