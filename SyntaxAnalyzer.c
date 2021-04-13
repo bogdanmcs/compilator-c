@@ -24,7 +24,7 @@ Token *consumedTk, *currentTk;
 int consume(int code)
 {
     if(currentTk -> code == code){
-        printf("_consumed: '%s'\n", enumNames2[code]);
+        //printf("_consumed: '%s'\n", enumNames[code]);
         consumedTk = currentTk;
         currentTk = currentTk -> next;
         return 1;
@@ -45,7 +45,7 @@ char* getName(Token *token)
         strcpy(charConv, enumNamesConv[token->code]);
     }
 
-    char *charConvF = malloc (sizeof(char) * strlen(charConv)); // !
+    char *charConvF = malloc (sizeof(char) * strlen(charConv));
     strcpy(charConvF, charConv);
     return charConvF;
 }
@@ -56,7 +56,7 @@ int typeBase(){
     } else if(consume(STRUCT)){
         if(consume(ID)){
             return 1;
-        } else tkerr(consumedTk,"Error: expected ID after STRUCT");
+        } else tkerr(consumedTk,"Error: expected identifier(struct name) after STRUCT");
     }
     return 0;
 }
@@ -71,12 +71,12 @@ void checkMain(){
 
 int exprPostfix();
 int exprUnary(){
-    printf("exprUnary\n");
+    //printf("exprUnary\n");
     Token *startTk = currentTk;
     if(consume(SUB) || consume(NOT)){
         if(exprUnary())
             return 1;
-        else tkerr(consumedTk,"Error: exprUnary failed in exprUnary()");
+        else tkerr(consumedTk,"Error: expected expression after '%s'", getName(consumedTk));
     }
     else if(exprPostfix())
         return 1;
@@ -86,18 +86,17 @@ int exprUnary(){
 }
 
 int typeName();
-// ?
 int exprCast(){
-    printf("exprCast\n");
+    //printf("exprCast\n");
     Token *startTk = currentTk;
     if(consume(LPAR)){
         if(typeName()){
             if(consume(RPAR)){
                 if(exprCast()){
                     return 1;
-                } else tkerr(consumedTk,"Error: expected expression(cast) after '('");
-            } else tkerr(consumedTk,"Error: expected ')' after type name");
-        } //else tkerr(consumedTk,"Error: expected type name after '('");
+                } else tkerr(consumedTk,"Error: expected expression after '('");
+            } else tkerr(consumedTk,"Error: expected ')' after '%s'", getName(consumedTk));
+        } //else tkerr(consumedTk,"Error: expected type name after '('"); // ??? gcc says -no
         currentTk = startTk;
     }
 
@@ -262,7 +261,7 @@ int exprAssign(){
             } else tkerr(consumedTk, "Error: expected operand after '%s'", getName(consumedTk));
         }
     }
-    // printf("TRYING exprOr()\n");
+    // printf("trying exprOr()\n");
     currentTk = startTk;
     if(exprOr())
         return 1;
@@ -282,7 +281,7 @@ int declArray(){
         expr();
         if(consume(RBRACKET)){
             return 1;
-        } else tkerr(consumedTk,"Error: expected ']' after '['");
+        } else tkerr(consumedTk,"Error: expected ']' after '%s'", getName(consumedTk));
     }
     return 0;
 }
@@ -293,7 +292,7 @@ int funcArg(){
         if(consume(ID)){
             declArray();
             return 1;
-        } else tkerr(consumedTk,"Error: expected identifier after %s", getName(consumedTk));
+        } else tkerr(consumedTk,"Error: expected identifier(variable name) after %s", getName(consumedTk));
     }
     return 0;
 }
@@ -307,13 +306,13 @@ int declVar(){
                 if(consume(COMMA)){
                     if(consume(ID)){
                         declArray();
-                    } else tkerr(consumedTk, "Error: expected identifier after ','");
+                    } else tkerr(consumedTk, "Error: expected identifier(variable name) after ','");
                 } else break;
             }
             if(consume(SEMICOLON)){
                 return 1;
             } else tkerr(consumedTk, "Error: expected ';' after '%s'", getName(consumedTk));
-        } else tkerr(consumedTk, "Error: expected identifier before '%s'", getName(currentTk));
+        } else tkerr(consumedTk, "Error: expected identifier(variable name) after '%s'", getName(consumedTk));
     }
     currentTk = startTk;
     return 0;
@@ -333,10 +332,10 @@ int declStruct(){
                 if(consume(RACC)){
                     if(consume(SEMICOLON)){
                         return 1;
-                    } else tkerr(consumedTk,"Error: missing ';' after '}'");
-                } else tkerr(consumedTk,"Error: '}' missing after '{' or STRUCT statements");
+                    } else tkerr(consumedTk,"Error: expected ';' after '%s'", getName(consumedTk));
+                } else tkerr(consumedTk,"Error: expected '}' after '%s'", getName(consumedTk));
             }
-        } else tkerr(consumedTk,"Error: ID missing after STRUCT");
+        } else tkerr(consumedTk,"Error: expected identifier(struct name) after STRUCT");
     }
     currentTk = startTk;
     return 0;
@@ -353,10 +352,10 @@ int typeName(){
 
 
 int exprPrimary(){
-    printf("exprPrimary\n");
+    //printf("exprPrimary\n");
     Token *startTk = currentTk;
     if(consume(ID)){
-        printf(" -> id: %s\n", consumedTk->text);
+        //printf(" -> id: %s\n", consumedTk->text);
         if(consume(LPAR)){
             if(expr()){
                 while(1){
@@ -369,11 +368,11 @@ int exprPrimary(){
 
             }
             if(!consume(RPAR))
-                tkerr(consumedTk, "Error: expected ')' after '(' or expression");
+                tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
         }
         return 1;
     } else if(consume(CT_INT)){
-        printf(" -> int: %d\n", (int)consumedTk->i);
+        //printf(" -> int: %d\n", (int)consumedTk->i);
         return 1;
     } else if(consume(CT_REAL)){
         return 1;
@@ -385,24 +384,23 @@ int exprPrimary(){
         if(expr()){
             if(consume(RPAR)){
                 return 1;
-            } else tkerr(consumedTk, "Error: expected ')' after expression");
+            } else tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
         } else tkerr(consumedTk, "Error: expected expression after '('"); //?
     }
     currentTk = startTk;
     return 0;
 }
 
-// ?
 int exprPostfix1(){
-    printf("exprPostfix1\n");
+    //printf("exprPostfix1\n");
     if(consume(LBRACKET)){
         if(expr()){
             if(consume(RBRACKET)){
                 if(exprPostfix1()){
                     //return 1;
                 }
-                return 1; // placed here bcs it can fail(?)
-            } else tkerr(consumedTk, "Error: expected ']' after expression");
+                return 1; // placed here bcs it can fail
+            } else tkerr(consumedTk, "Error: expected ']' after '%s'", getName(consumedTk)); // verified
         } else tkerr(consumedTk, "Error: expected expression after '['");
     }  else
     if(consume(DOT)){
@@ -410,14 +408,14 @@ int exprPostfix1(){
             if(exprPostfix1()){
                 // return 1;
             }
-            return 1; // placed here bcs it can fail(?)
-        } else tkerr(consumedTk, "Error: expected ID after '.'");
+            return 1; // placed here bcs it can fail
+        } else tkerr(consumedTk, "Error: expected identifier(name) after '.'");
     }
     return 0;
 }
 
 int exprPostfix(){
-    printf("exprPostfix\n");
+    //printf("exprPostfix\n");
     if(exprPrimary()){
         if(exprPostfix1()){
             // opt
@@ -464,7 +462,7 @@ int stm(){
                         }
                         return 1;
                     } else tkerr(consumedTk, "Error: missing statement after '('");
-                } else tkerr(consumedTk, "Error: expected ')' before '%s'", getName(currentTk));
+                } else tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
             } else tkerr(consumedTk, "Error: expected expression after '('");
         } else tkerr(consumedTk, "Error: expected '(' after IF");
 
@@ -475,7 +473,7 @@ int stm(){
                     if(stm()){
                         return 1;
                     } else tkerr(consumedTk, "Error: statement missing after '('");
-                } else tkerr(consumedTk, "Error: expected ')' before statement");
+                } else tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
             } else tkerr(consumedTk, "Error: expected expression after '('");
         } else tkerr(consumedTk, "Error: expected '(' after WHILE");
 
@@ -490,9 +488,9 @@ int stm(){
                         if(stm()){
                             return 1;
                         } else tkerr(consumedTk, "Error: statement missing after ')'");
-                    } else tkerr(consumedTk, "Error: expected ')' before statement\n");
-                } else tkerr(consumedTk, "Error: expected ';' before ')' in for\n");
-            } else tkerr(consumedTk, "Error: expected ';' before ')' in for\n");
+                    } else tkerr(consumedTk, "Error: expected ')' after '%s'\n", getName(consumedTk));
+                } else tkerr(consumedTk, "Error: expected ';' after '%s' in FOR\n", getName(consumedTk));
+            } else tkerr(consumedTk, "Error: expected ';' after '%s' in FOR\n", getName(consumedTk));
         } else tkerr(consumedTk, "Error: expected '(' after FOR\n");
 
     } else if(consume(BREAK)){ // BREAK SEMICOLON
@@ -504,14 +502,14 @@ int stm(){
         expr();
         if(consume(SEMICOLON)){
             return 1;
-        } else tkerr(consumedTk, "Error: expected ';' after RETURN");
+        } else tkerr(consumedTk, "Error: expected ';' after '%s'", getName(consumedTk));
 
-    } else if(expr()){ // expr? SEMICOLON
+    } else if(expr()){ // expr SEMICOLON
         if(consume(SEMICOLON)){
             return 1;
-        } else tkerr(consumedTk, "expected ';' after expression");
+        } else tkerr(consumedTk, "expected ';' after '%s'", getName(consumedTk));
 
-    } else if(consume(SEMICOLON)){ // just SEMICOLON
+    } else if(consume(SEMICOLON)){ //  SEMICOLON
         return 1;
     }
 
@@ -522,6 +520,11 @@ int stm(){
 int declFunc(){
     Token *startTk = currentTk;
     int isFunction = 0;
+    int isStruct = 0;
+
+    if(currentTk->code == STRUCT)
+        isStruct = 1;
+
     if(typeBase()){
         consume(MUL);
     } else if(consume(VOID)){
@@ -529,7 +532,7 @@ int declFunc(){
     } else return 0;
 
     if(consume(ID)){
-        checkMain();
+        //checkMain(); // domain
         if(consume(LPAR)){
             if(funcArg()){ // optional branch
                 while(1){
@@ -544,12 +547,15 @@ int declFunc(){
             if(consume(RPAR)){
                 if(stmCompound()){
                     return 1;
-                } else tkerr(consumedTk, "Error: '{' missing after '%s'", getName(consumedTk));
+                } else tkerr(consumedTk, "Error: expected '{' after '%s'", getName(consumedTk));
             } else tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
             return 0;
         }
         if(isFunction) tkerr(consumedTk, "Error: expected '(' after '%s'", getName(consumedTk));
 
+    } else {
+        if(!isStruct && currentTk->code == LPAR)
+            tkerr(consumedTk, "Error: expected function name after '%s'", getName(consumedTk));
     }
     currentTk = startTk;
     return 0;
@@ -559,21 +565,22 @@ void unit(){
     Token *startTk = currentTk;
     while(1){
         if(declStruct()){
-            printf("info: declared a struct\n\n");
+            printf("unit: declared a struct\n");
         } else if(declFunc()){
-            printf("info: declared a function\n\n");
+            printf("unit: declared a function\n");
         } else if(declVar()){
-            printf("info: declared a variable\n\n");
-        } else break;
+            printf("unit: declared a variable\n");
+        } else if(currentTk->code == END)
+            break;
+        else
+        if(!typeBase())
+            tkerr(currentTk, "Error: expected a type base before '%s'", getName(currentTk));
+        else
+            tkerr(currentTk, "Error: illegal statement - unknown");
     }
 
-    if(!consume(END))
-        tkerr(currentTk,"Error: illegal statement");
+    consume(END);
     currentTk = startTk;
-    if(mainFuncFlag == 0){
-        printf("Error: undefined main\n");
-        exit(11);
-    }
 }
 
 void analyzeSyntax(Token *tokens){
