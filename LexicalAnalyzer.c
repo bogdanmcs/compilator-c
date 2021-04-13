@@ -634,7 +634,12 @@ void showAtoms()
 
 void openFileAndSetPointer(char *fileName)
 {
-    FILE *file = fopen(fileName, "rb");
+    FILE *file;
+    if((file = fopen(fileName, "rb")) == NULL){
+        printf("Error: cannot open file '%s' / file doesn't exist / invalid path\n",
+               fileName);
+        exit(13);
+    }
 
     char fileText[30001];
     int n = fread(fileText, 1, 30000, file);
