@@ -1281,7 +1281,14 @@ int typeName(Type *type){
 int exprPrimary(){
     //printf("exprPrimary\n");
     Token *startTk = currentTk;
+    Token *tkName;
+
     if(consume(ID)){
+        tkName = consumedTk;
+
+        if(findSymbol(&symbols, tkName->text) == NULL){
+            tkerr(consumedTk,"Var '%s' has not been declared yet", tkName->text);
+        }
         //printf(" -> id: %s\n", consumedTk->text);
         if(consume(LPAR)){
             if(expr()){
@@ -1332,6 +1339,12 @@ int exprPostfix1(){
     }  else
     if(consume(DOT)){
         if(consume(ID)){
+            Token *tkName = consumedTk;
+
+            if(findSymbol(&symbols, tkName->text) == NULL){
+                tkerr(consumedTk,"Var '%s' is not a member of the structure", tkName->text);
+            }
+
             if(exprPostfix1()){
                 // return 1;
             }
@@ -1582,7 +1595,7 @@ int main()
 {
     // lexical analysis
     initToken();
-    openFileAndSetPointer("10.c");
+    openFileAndSetPointer("11.c");
 
     while(getNextToken() != END)
         ;
@@ -1597,6 +1610,9 @@ int main()
     deli();
     showSymbolTable();
     deli();
+
+    // type analysis
+
 
     //
     freeMem();
