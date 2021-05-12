@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <ctype.h>
 
-////////////////////////////////// Lexical analyzer
+////////////////////////////////// Lexical analysis
 
 #define SAFEALLOC(var,Type) if((var=(Type*)malloc(sizeof(Type)))==NULL)err("not enough memory");
 
@@ -23,7 +23,7 @@ const char* enumNames[] = {"ID", "BREAK", "CHAR", "DOUBLE", "ELSE", "FOR", "IF",
 const char* enumNamesConv[] = {"ID", "BREAK", "CHAR", "DOUBLE", "ELSE", "FOR", "IF", "INT",
                                "RETURN", "STRUCT", "VOID", "WHILE", "CT_INT", "CT_REAL", "CT_CHAR", "CT_STRING", ",",
                                ";", "(", ")", "[", "]", "{", "}", "+", "*", "-",
-                               "DIV", "DOT", "AND", "OR", "NOT", "=", "==", "!=", "<", "<=", ">",
+                               "/", ".", "&&", "||", "!", "=", "==", "!=", "<", "<=", ">",
                                ">=", "END"};
 
 
@@ -44,22 +44,22 @@ int line = 1;
 void err(const char *fmt,...)
 {
     va_list va;
-            va_start(va,fmt);
+    va_start(va,fmt);
     fprintf(stderr,"error: ");
     vfprintf(stderr,fmt,va);
     fputc('\n',stderr);
-            va_end(va);
+    va_end(va);
     exit(-1);
 }
 
 void tkerr(const Token *tk,const char *fmt,...)
 {
     va_list va;
-            va_start(va,fmt);
+    va_start(va,fmt);
     fprintf(stderr,"error in line %d: ",tk->line);
     vfprintf(stderr,fmt,va);
     fputc('\n',stderr);
-            va_end(va);
+    va_end(va);
     exit(-1);
 }
 
@@ -693,9 +693,190 @@ void openFileAndSetPointer(char *fileName)
 }
 
 
-/////////////////////////////////////////// Syntax Analyzer
+/////////////////////////////////////////// Syntax Analysis
+/////////////// Domain Analysis
+enum {TB_INT,TB_DOUBLE,TB_CHAR,TB_STRUCT,TB_VOID};
+
+struct _Symbol;
+typedef struct _Symbol Symbol;
+
+typedef struct{
+    Symbol **begin;
+    Symbol **end;
+    Symbol **after;
+} Symbols;
+
+typedef struct{
+    int typeBase;
+    Symbol *s;
+    int nElements;
+} Type;
+
+enum {CLS_VAR,CLS_FUNC,CLS_EXTFUNC,CLS_STRUCT};
+enum {MEM_GLOBAL,MEM_ARG,MEM_LOCAL};
+
+typedef struct _Symbol{
+    const char *name;
+    int cls;
+    int mem;
+    Type type;
+    int depth;
+    union{
+        Symbols args;
+        Symbols members;
+    };
+} Symbol;
+
+Symbols symbols;
+
+void initSymbols(Symbols *symbols){
+    symbols->begin=NULL;
+    symbols->end=NULL;
+    symbols->after=NULL;
+}
+
+int crtDepth = 0;
+Symbol *crtFunc = NULL;
+Symbol *crtStruct = NULL;
+
+char *getMemName(int mem){
+    switch(mem){
+        case 0:	return "MEM_GLOBAL";
+            break;
+        case 1: return "MEM_ARG";
+            break;
+        default: return "MEM_LOCAL";
+    }
+}
+
+char *getClsName(int cls){
+    switch(cls){
+        case 0:	return "CLS_VAR";
+            break;
+        case 1: return "CLS_FUNC";
+            break;
+        case 2: return "CLS_EXTFUNC";
+            break;
+        default: return "CLS_STRUCT";
+    }
+}
+
+char *getTypeName(int type){
+    switch(type){
+        case 0:	return "TB_INT";
+            break;
+        case 1: return "TB_DOUBLE";
+            break;
+        case 2: return "TB_CHAR";
+            break;
+        case 3:	return "TB_STRUCT";
+            break;
+        default: return "TB_VOID";
+    }
+}
+
+
+Symbol *addSymbol(Symbols *symbols, const char *name, int cls){
+    Symbol *s;
+    if(symbols->end == symbols->after){
+        int count =  symbols->after-symbols->begin;
+        int n = count * 2;
+
+        if(n == 0)
+            n = 1;
+
+        symbols->begin = (Symbol**) realloc (symbols->begin, n * sizeof(Symbol*));
+
+        if(symbols->begin == NULL)
+            err("not enough memory");
+
+        symbols->end = symbols->begin + count;
+        symbols->after = symbols->begin + n;
+    }
+
+    SAFEALLOC (s,Symbol) * symbols->end++ = s;
+    s->name = name;
+    s->cls = cls;
+    s->depth = crtDepth;
+    //printf("Symbol(name: %s, cls: %d, mem: %d, typeBase: %d, depth: %d)\n", name, cls, s->mem, s->type.typeBase, crtDepth);
+    return s;
+}
+
+Symbol *findSymbol(Symbols *symbols, const char *name){
+    int i, n = symbols->end - symbols->begin;
+    for(i = n - 1; i >= 0; i--){
+        if(strcmp(symbols->begin[i]->name, name) == 0)
+            return symbols->begin[i];
+    }
+    return NULL;
+}
+
+Symbol *findSymbolInFunctionArgs(Symbols *symbols, const char *name){
+    int i, n = symbols->end - symbols->begin;
+    for(i = n - 1; i >= 0 && symbols->begin[i]->cls != CLS_FUNC; i--){
+        if(strcmp(symbols->begin[i]->name, name) == 0)
+            return symbols->begin[i];
+    }
+    return NULL;
+}
+
 int mainFuncFlag;
 Token *consumedTk, *currentTk;
+
+void addVar(Token *tkName,Type *t){
+    Symbol *s;
+
+    if(crtStruct){
+        if(findSymbol(&crtStruct->members, tkName->text))
+            tkerr(currentTk, "symbol redefinition: %s", tkName->text);
+        s = addSymbol(&crtStruct->members, tkName->text, CLS_VAR);
+    }
+    else if(crtFunc){
+        s = findSymbol(&symbols, tkName->text);
+        if(s&&s->depth == crtDepth)
+            tkerr(currentTk, "symbol redefinition: %s", tkName->text);
+        s = addSymbol(&symbols, tkName->text, CLS_VAR);
+        s->mem = MEM_LOCAL;
+    } else{
+        if(findSymbol(&symbols, tkName->text))
+            tkerr(currentTk, "symbol redefinition: %s", tkName->text);
+        s = addSymbol(&symbols, tkName->text, CLS_VAR);
+        s->mem = MEM_GLOBAL;
+    }
+    s->type = *t;
+
+    if(crtStruct != NULL){
+        printf("Symbol_struct_var(name: %s, cls: %s, mem: %s, type: %s, depth: %d)\n", s->name,
+               getClsName(s->cls), getMemName(s->mem), getTypeName(s->type.typeBase), s->depth);
+    } else {
+        printf("Symbol(name: %s, cls: %s, mem: %s, type: %s, depth: %d)\n", s->name,
+               getClsName(s->cls), getMemName(s->mem), getTypeName(s->type.typeBase), s->depth);
+    }
+}
+
+void deleteSymbolsAfter(Symbols *symbols, Symbol *crtDel){
+    //printf("Deleting after: %s\n\n", crtDel->name);
+
+    if(crtDel != symbols->end[-1]){
+        Symbol **i;
+
+        for(i = symbols->begin; i != symbols->end; i++){
+            //printf("%s ", (*i)->name);
+            if((*i) == crtDel){
+                i++;
+                break;
+            }
+        } //printf("\n");
+
+        (*i) = NULL;
+        symbols->end = i;
+    }
+    // else
+    // 	printf("No vars!\n");
+}
+
+
+///////////////
 int consume(int code)
 {
     if(currentTk -> code == code){
@@ -725,23 +906,37 @@ char* getName(Token *token)
     return charConvF;
 }
 
-int typeBase(){
-    if(consume(INT) || consume(CHAR) || consume(DOUBLE)){
+int typeBase(Type *type){
+    Token *tkName;
+
+    if(consume(INT)){
+        type->typeBase = TB_INT;
+        return 1;
+    } else if(consume(CHAR)){
+        type->typeBase = TB_CHAR;
+        return 1;
+    } else if(consume(DOUBLE)){
+        type->typeBase = TB_DOUBLE;
         return 1;
     } else if(consume(STRUCT)){
         if(consume(ID)){
+            tkName = consumedTk;
+
+            Symbol *s = findSymbol(&symbols, tkName->text);
+            if(s == NULL){
+                tkerr(currentTk,"Undefined symbol: %s", tkName->text);
+            }
+
+            if(s->cls != CLS_STRUCT){
+                tkerr(currentTk,"%s is not a struct", tkName->text);
+            }
+            type->typeBase = TB_STRUCT;
+            type->s = s;
+
             return 1;
         } else tkerr(consumedTk,"Error: expected identifier(struct name) after STRUCT");
     }
     return 0;
-}
-
-void checkMain(){
-    if(strcmp(consumedTk -> text, "main") == 0){
-        if(mainFuncFlag == 1)
-            tkerr(consumedTk, "Error: redefinition of main");
-        mainFuncFlag++;
-    }
 }
 
 int exprPostfix();
@@ -752,8 +947,7 @@ int exprUnary(){
         if(exprUnary())
             return 1;
         else tkerr(consumedTk,"Error: expected expression after '%s'", getName(consumedTk));
-    }
-    else if(exprPostfix())
+    } else if(exprPostfix())
         return 1;
 
     currentTk = startTk;
@@ -951,9 +1145,12 @@ int expr(){
     return 0;
 }
 
-int declArray(){
+int declArray(Type *type){
     if(consume(LBRACKET)){
-        expr();
+        if(expr()){
+            // AD
+            type->nElements = 0;
+        }
         if(consume(RBRACKET)){
             return 1;
         } else tkerr(consumedTk,"Error: expected ']' after '%s'", getName(consumedTk));
@@ -962,10 +1159,32 @@ int declArray(){
 }
 
 int funcArg(){
-    //Token *startTk = currentTk;
-    if(typeBase()){
+    Type *type = malloc(sizeof(Type));
+    Token *tkName;
+
+    if(typeBase(type)){
         if(consume(ID)){
-            declArray();
+            tkName = consumedTk;
+
+            // verify if it's the only arg with this name
+            if(findSymbolInFunctionArgs(&symbols, tkName->text))
+                tkerr(consumedTk,"Symbol redefinition: %s",tkName->text);
+
+
+            if(!declArray(type)){
+                type->nElements = -1;
+            }
+
+            Symbol *s = addSymbol(&symbols, tkName->text, CLS_VAR);
+            s->mem = MEM_ARG;
+            s->type = *type;
+            s = addSymbol(&crtFunc->args, tkName->text, CLS_VAR);
+            s->mem = MEM_ARG;
+            s->type = *type;
+
+            printf("Symbol(name: %s, cls: %s, mem: %s, type: %s, depth: %d)\n", s->name,
+                   getClsName(s->cls), getMemName(s->mem), getTypeName(s->type.typeBase), s->depth);
+
             return 1;
         } else tkerr(consumedTk,"Error: expected identifier(variable name) after %s", getName(consumedTk));
     }
@@ -974,13 +1193,28 @@ int funcArg(){
 
 int declVar(){
     Token *startTk = currentTk;
-    if(typeBase()){
+    Type *type = malloc (sizeof(Type));
+    Token *tkName;
+
+    if(typeBase(type)){
         if(consume(ID)){
-            declArray();
+            tkName = consumedTk;
+            if(!declArray(type)){
+                type->nElements = -1;
+            }
+
+            addVar(tkName, type);
+
             while(1){
                 if(consume(COMMA)){
                     if(consume(ID)){
-                        declArray();
+                        tkName = consumedTk;
+                        if(!declArray(type)){
+                            type->nElements = -1;
+                        }
+
+                        addVar(tkName, type);
+
                     } else tkerr(consumedTk, "Error: expected identifier(variable name) after ','");
                 } else break;
             }
@@ -995,9 +1229,24 @@ int declVar(){
 
 int declStruct(){
     Token *startTk = currentTk;
+    Token *tkName;
+
     if(consume(STRUCT)){
         if(consume(ID)){
+            tkName = consumedTk;
             if(consume(LACC)){
+                // Domain Analysis
+                if(findSymbol(&symbols,tkName->text)){
+                    tkerr(consumedTk,"Symbol redefinition: %s",tkName->text);
+                } //else printf("Symbol '%s' not found, adding now\n", tkName->text);
+
+                crtStruct = addSymbol(&symbols, tkName->text, CLS_STRUCT);
+                initSymbols(&crtStruct->members);
+
+                printf("Symbol(name: %s, cls: %s, mem: %s, depth: %d)\n", crtStruct->name,
+                       getClsName(crtStruct->cls), getMemName(crtStruct->mem), crtStruct->depth);
+
+                // Domain Analysis
                 while(1){
                     if(declVar()){
                         continue;
@@ -1006,9 +1255,10 @@ int declStruct(){
                 }
                 if(consume(RACC)){
                     if(consume(SEMICOLON)){
+                        crtStruct = NULL;
                         return 1;
                     } else tkerr(consumedTk,"Error: expected ';' after '%s'", getName(consumedTk));
-                } else tkerr(consumedTk,"Error: expected '}' after '%s'", getName(consumedTk));
+                } else tkerr(currentTk,"Error: expected '}' before '%s'", getName(consumedTk));
             }
         } else tkerr(consumedTk,"Error: expected identifier(struct name) after STRUCT");
     }
@@ -1016,9 +1266,11 @@ int declStruct(){
     return 0;
 }
 
-int typeName(){
-    if(typeBase()){
-        declArray();
+int typeName(Type *type){
+    if(typeBase(type)){
+        if(!declArray(type)){
+            type->nElements = -1;
+        }
         return 1;
     }
     return 0;
@@ -1103,8 +1355,11 @@ int exprPostfix(){
 int stm();
 int stmCompound(){
     //printf("stmCompound\n");
+    Symbol *start = symbols.end[-1];
+
     Token *startTk = currentTk;
     if(consume(LACC)){
+        crtDepth++;
         while(1){ // * branch
             if(declVar()){
                 continue;
@@ -1112,9 +1367,13 @@ int stmCompound(){
                 continue;
             } else break;
         }
-        if(consume(RACC))
+        if(consume(RACC)){
+            crtDepth--;
+            deleteSymbolsAfter(&symbols, start);
+
             return 1;
-        else tkerr(consumedTk, "Error: expected '}' after '%s'", getName(consumedTk));
+        }
+        else tkerr(currentTk, "Error: expected '}' before '%s'", getName(currentTk));
     }
     currentTk = startTk;
     return 0;
@@ -1200,15 +1459,35 @@ int declFunc(){
     if(currentTk->code == STRUCT)
         isStruct = 1;
 
-    if(typeBase()){
-        consume(MUL);
+    Type *type = malloc (sizeof(Type));
+    Token *tkName;
+
+    if(typeBase(type)){
+        if(consume(MUL)){
+            type->nElements = 0;
+        } else {
+            type->nElements = -1;
+        }
     } else if(consume(VOID)){
+        type->typeBase = TB_VOID;
+
         isFunction = 1;
     } else return 0;
 
     if(consume(ID)){
-        //checkMain(); // domain
+        tkName = consumedTk;
+
         if(consume(LPAR)){
+            if(findSymbol(&symbols, tkName->text)){
+                tkerr(currentTk,"Symbol redefinition: %s", tkName->text);
+            } //else printf("Symbol '%s' not found, adding now\n", tkName->text);
+            crtFunc = addSymbol(&symbols, tkName->text, CLS_FUNC);
+            initSymbols(&crtFunc->args);
+            crtFunc->type = *type;
+            printf("Symbol(name: %s, cls: %s, mem: %s, type: %s, depth: %d)\n", crtFunc->name,
+                   getClsName(crtFunc->cls), getMemName(crtFunc->mem), getTypeName(crtFunc->type.typeBase), crtFunc->depth);
+            crtDepth++;
+
             if(funcArg()){ // optional branch
                 while(1){
                     if(consume(COMMA)){
@@ -1220,7 +1499,11 @@ int declFunc(){
             }
 
             if(consume(RPAR)){
+                crtDepth--;
                 if(stmCompound()){
+                    deleteSymbolsAfter(&symbols, crtFunc);
+                    crtFunc = NULL;
+
                     return 1;
                 } else tkerr(consumedTk, "Error: expected '{' after '%s'", getName(consumedTk));
             } else tkerr(consumedTk, "Error: expected ')' after '%s'", getName(consumedTk));
@@ -1238,17 +1521,18 @@ int declFunc(){
 
 void unit(){
     Token *startTk = currentTk;
+    Type *type = malloc(sizeof(Type));
     while(1){
         if(declStruct()){
-            printf("unit: declared a struct\n");
+            // printf("unit: declared a struct\n");
         } else if(declFunc()){
-            printf("unit: declared a function\n");
+            //printf("unit: declared a function\n");
         } else if(declVar()){
-            printf("unit: declared a variable\n");
+            // printf("unit: declared a variable\n");
         } else if(currentTk->code == END)
             break;
         else
-        if(!typeBase())
+        if(!typeBase(type))
             tkerr(currentTk, "Error: expected a type base before '%s'", getName(currentTk));
         else
             tkerr(currentTk, "Error: illegal statement - unknown");
@@ -1258,23 +1542,63 @@ void unit(){
     currentTk = startTk;
 }
 
+void showSymbolTable(){
+    Symbols *syms = &symbols;
+    int n = syms->end - syms->begin;
+
+    printf("Show TS(%d):\n", n);
+
+    for(int i = 0; i < n; i++){
+        printf("Symbol(name: %s, cls: %s, mem: %s",
+               syms->begin[i]->name, getClsName(syms->begin[i]->cls),
+               getMemName(syms->begin[i]->mem));
+
+        Symbol *aux = syms->begin[i];
+        if(aux->cls == CLS_FUNC){
+            printf(", type: %s, args: ", getTypeName(syms->begin[i]->type.typeBase));
+            int n2 = aux->args.end - aux->args.begin;
+            for(int i2 = 0; i2 < n2; i2++){
+                printf("%s ", aux->args.begin[i2]->name);
+            }
+            printf(")\n");
+        } else if(aux->cls == CLS_STRUCT){
+            printf(", members: ");
+            int n2 = aux->members.end - aux->members.begin;
+            for(int i2 = 0; i2 < n2; i2++){
+                printf("%s ", aux->members.begin[i2]->name);
+            }
+            printf(")\n");
+        } else {
+            printf(", type: %s)\n", getTypeName(syms->begin[i]->type.typeBase));
+        }
+    }
+}
+
+void deli(){
+    printf("----------\n");
+}
+
 int main()
 {
-    // lexical analyzer
+    // lexical analysis
     initToken();
-    openFileAndSetPointer("9.c");
+    openFileAndSetPointer("10.c");
 
     while(getNextToken() != END)
         ;
 
     showAtoms();
 
-    // syntax analyzer
+    // syntax & domain analysis
     currentTk = tokens;
     unit();
-    printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nSyntactic analysis complete: no errors found\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    deli();
+    printf("Syntax & Domain analysis: 0 errors\n");
+    deli();
+    showSymbolTable();
+    deli();
 
-    // free memory and exit program
+    //
     freeMem();
     return 0;
 }
