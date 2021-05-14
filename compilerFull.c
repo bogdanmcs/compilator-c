@@ -740,9 +740,7 @@ int crtDepth = 0;
 Symbol *crtFunc = NULL;
 Symbol *crtStruct = NULL;
 
-int mainFuncFlag;
 Token *consumedTk, *currentTk;
-
 
 Type createType(int typeBase, int nElements)
 {
@@ -753,16 +751,16 @@ Type createType(int typeBase, int nElements)
 }
 
 typedef union{
-    long int i; // int, char
-    double d; // double
-    const char *str; // char[]
+    long int i;
+    double d;
+    const char *str;
 } CtVal;
 
 typedef struct{
-    Type type; // type of the result
-    int isLVal; // if it is a LVal
-    int isCtVal; // if it is a constant value (int, real, char, char[])
-    CtVal ctVal; // the constat value
+    Type type;
+    int isLVal;
+    int isCtVal;
+    CtVal ctVal;
 } RetVal;
 
 void cast(Type *dst,Type *src)
@@ -806,7 +804,7 @@ Type getArithType(Type *s1,Type *s2){
     Type convType;
     convType.nElements = -1;
 
-    if(s1->typeBase == s2->typeBase && s1->typeBase != TB_VOID){
+    if(s1->typeBase == s2->typeBase){
         convType.typeBase = s1->typeBase;
     } else if((s1->typeBase == TB_INT && s2->typeBase == TB_CHAR) || (s1->typeBase == TB_CHAR && s2->typeBase == TB_INT)){
         convType.typeBase = TB_INT;
@@ -955,8 +953,7 @@ void deleteSymbolsAfter(Symbols *symbols, Symbol *crtDel){
         (*i) = NULL;
         symbols->end = i;
     }
-    // else
-    // 	printf("No vars!\n");
+    // else `no vars to delete`
 }
 
 Symbol *addExtFunc(const char *name,Type type){
@@ -1279,7 +1276,7 @@ int exprOr1(RetVal *rv){
 
     if(consume(OR)){
         if(exprAnd(&rve)){
-            // TD
+
             if(rv->type.typeBase == TB_STRUCT || rve.type.typeBase == TB_STRUCT){
                 tkerr(currentTk,"a structure cannot be logically tested");
             }
@@ -1344,10 +1341,8 @@ int declArray(Type *type){
     if(consume(LBRACKET)){
         RetVal rv;
         if(expr(&rv)){
-            // AD
             type->nElements = 0;
 
-            // TD
             if(!rv.isCtVal) tkerr(currentTk,"the array size is not a constant");
             if(rv.type.typeBase != TB_INT) tkerr(currentTk,"the array size is not an integer");
             type->nElements = rv.ctVal.i;
@@ -1440,7 +1435,7 @@ int declStruct(){
         if(consume(ID)){
             tkName = consumedTk;
             if(consume(LACC)){
-                // Domain Analysis
+
                 if(findSymbol(&symbols,tkName->text)){
                     tkerr(consumedTk,"Symbol redefinition: %s",tkName->text);
                 } //else printf("Symbol '%s' not found, adding now\n", tkName->text);
@@ -1454,7 +1449,7 @@ int declStruct(){
                 printf("Symbol(name: %s, cls: %s, mem: %s, depth: %d)\n", crtStruct->name,
                        getClsName(crtStruct->cls), getMemName(crtStruct->mem), crtStruct->depth);
 
-                // Domain Analysis
+
                 while(1){
                     if(declVar()){
                         continue;
@@ -1536,8 +1531,7 @@ int exprPrimary(RetVal *rv){
             if(s->cls == CLS_FUNC || s->cls == CLS_EXTFUNC)
                 tkerr(currentTk,"missing call for function %s", tkName->text);
         }
-        // if(s->cls == CLS_FUNC || s->cls == CLS_EXTFUNC) // maybe up one more PAR up^??
-        //     tkerr(currentTk,"missing call for function %s", tkName->text);
+        //
 
         return 1;
     } else if(consume(CT_INT)){
@@ -1914,11 +1908,6 @@ int main()
     s = addExtFunc("get_c",createType(TB_CHAR,-1));
     s = addExtFunc("seconds",createType(TB_DOUBLE,-1));
 
-    // no args - dont uncomment
-    //addFuncArg(s,"",createType(-1, 0));
-    //addFuncArg(s,"",createType(-1, 0));
-    //addFuncArg(s,"",createType(-1, 0));
-    //addFuncArg(s,"",createType(-1, 0));
     unit();
     deli();
     printf("Syntax & Domain analysis: 0 errors\n");
